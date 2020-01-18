@@ -1,13 +1,11 @@
 /* This module gets a stream of midi bytes and analyses it.
  * It calls callback functions whenever a message is received.
- * This is written for speed.
+ * This is nothing Atari specific.
  */
 
 #include <stdio.h>
 
 #include "midimsg.h"
-
-static int msg_in_progress = 0;
 
 /* These are structures which get filled up with bytes received, and which
  * are then passed to the user's callback functions */
@@ -18,6 +16,12 @@ MIDIMSG_CONTROL_CHANGE control_change;
 MIDIMSG_PROGRAM_CHANGE program_change;
 MIDIMSG_CHANNEL_PRESSURE channel_pressure;
 MIDIMSG_PITCH_BEND pitch_bend;
+UWORD song_position;
+int sysex_max_size;
+MIDIMSG_SYSEX system_exclusive;
+int sysex_errored;
+MIDIMSG_MTC_QUARTER_FRAME mtc_quarter_frame;
+
 
 MIDIMSG_CALLBACKS midimsg_callbacks = {
     0L, /* Error */
@@ -51,7 +55,7 @@ static void pitchb_channel(UBYTE);
 static void pitchb_lsb(UBYTE);
 static void pitchb_msb(UBYTE);
 
-/* System real time messagse */
+/* System real time message storage functions */
 static void clock(void);
 static void song_start(void);
 static void song_continue(void);
@@ -59,13 +63,22 @@ static void song_stop(void);
 static void active_sensing(void);
 static void reset(void);
 
-static UBYTE running_status;
+/* System common storage functions */
+static void sysex(UBYTE);
+static void mtc_quarter_frame_type(UBYTE);
+static void mtc_quarter_frame_value(UBYTE);
+static void song_position_lsb(UBYTE);
+static void song_position_msb(UBYTE);
+static void song_select(UBYTE);
+static void tune_request(UBYTE);
 
+/* Error callbacks (to be called next time we receive a byte after we've detected something wrong */
 static void err_message_aborted(UBYTE);
+static void err_message_unexpected_data(UBYTE);
 /* Empty callbacks */
 static void reset_callbacks(void);
-static void empty_realtime(void) { }
-static void empty_channel(void) { }
+static void empty_void(void) { }
+static void empty_byte(UBYTE whatever) { }
 
 static void (*store_next)(UBYTE) = err_message_aborted;
 static void (*channel_msg_store[])(UBYTE) =
@@ -81,41 +94,61 @@ static void (*channel_msg_store[])(UBYTE) =
 static void (*realtime_msg_store[])(void) =
 {
     clock,
-    empty_realtime,
+    empty_void,
     song_start,
     song_continue,
     song_stop,
-    empty_realtime,
+    empty_void,
     active_sensing,
     reset
+};
+static void (*common_msg_store[])(UBYTE) =
+{
+    sysex,
+    mtc_quarter_frame_type,
+    song_position_lsb,
+    song_select,
+    empty_byte,
+    empty_byte,
+    tune_request,
+    sysex
 };
 
 static void reset_callbacks(void)
 {
-    midimsg_callbacks.note_off = (void(*)(MIDIMSG_NOTE_OFF*))empty_channel;
-    midimsg_callbacks.note_on = (void(*)(MIDIMSG_NOTE_ON*))empty_channel;
-    midimsg_callbacks.poly_pressure= (void(*)(MIDIMSG_POLY_PRESSURE*))empty_channel;
-    midimsg_callbacks.control_change = (void(*)(MIDIMSG_CONTROL_CHANGE*))empty_channel;
-    midimsg_callbacks.program_change = (void(*)(MIDIMSG_PROGRAM_CHANGE*))empty_channel;
-    midimsg_callbacks.channel_pressure = (void(*)(MIDIMSG_CHANNEL_PRESSURE*))empty_channel;
-    midimsg_callbacks.pitch_bend = (void(*)(MIDIMSG_PITCH_BEND*))empty_channel;
+    midimsg_callbacks.note_off = (void(*)(MIDIMSG_NOTE_OFF*))empty_void;
+    midimsg_callbacks.note_on = (void(*)(MIDIMSG_NOTE_ON*))empty_void;
+    midimsg_callbacks.poly_pressure= (void(*)(MIDIMSG_POLY_PRESSURE*))empty_void;
+    midimsg_callbacks.control_change = (void(*)(MIDIMSG_CONTROL_CHANGE*))empty_void;
+    midimsg_callbacks.program_change = (void(*)(MIDIMSG_PROGRAM_CHANGE*))empty_void;
+    midimsg_callbacks.channel_pressure = (void(*)(MIDIMSG_CHANNEL_PRESSURE*))empty_void;
+    midimsg_callbacks.pitch_bend = (void(*)(MIDIMSG_PITCH_BEND*))empty_void;
 
-    midimsg_callbacks.clock = empty_realtime;
-    midimsg_callbacks.song_start = empty_realtime;
-    midimsg_callbacks.song_continue = empty_realtime;
-    midimsg_callbacks.song_stop = empty_realtime;
-    midimsg_callbacks.active_sensing = empty_realtime;
-    midimsg_callbacks.reset = empty_realtime;
+    midimsg_callbacks.clock = empty_void;
+    midimsg_callbacks.song_start = empty_void;
+    midimsg_callbacks.song_continue = empty_void;
+    midimsg_callbacks.song_stop = empty_void;
+    midimsg_callbacks.active_sensing = empty_void;
+    midimsg_callbacks.reset = empty_void;
+
+    midimsg_callbacks.system_exclusive = (void(*)(MIDIMSG_SYSEX*))empty_void;
+    midimsg_callbacks.mtc_quarter_frame = (void(*)(MIDIMSG_MTC_QUARTER_FRAME*))empty_void;
+    midimsg_callbacks.song_position = (void(*)(UWORD))empty_void;
+    midimsg_callbacks.song_select = (void(*)(UBYTE))empty_void;
 }
 
-void midimsg_init(void)
+void midimsg_init(UBYTE *sysex_buffer, int sysex_buffer_size)
 {
+    sysex_max_size = sysex_buffer_size;
+    sysex_errored = 0;
+    system_exclusive.length = 0;
+    system_exclusive.data = sysex_buffer;
+
     reset_callbacks();
 }
 
 void midimsg_exit(void)
 {
-    reset_callbacks();
 }
 
 
@@ -131,13 +164,12 @@ void midimsg_process(UBYTE byte)
   else if (byte >=0xF0)
   {
       /* System common message */
-      register UBYTE index = byte - 0xF8;
-      running_status = 0;
+      register UBYTE index = byte - 0xF0;
+      (*common_msg_store[index])(byte);
   }
   else if (byte >= 0x80)
   {
       /* Channel message */
-      running_status = byte;
       register UBYTE index = (byte - 0x80) >> 4;
       (*channel_msg_store[index])(byte);
   }
@@ -154,9 +186,14 @@ void midimsg_process(UBYTE byte)
   }
 }
 
-static void err_message_aborted(UBYTE b)
+static void err_message_aborted(UBYTE code)
 {
     (*midimsg_callbacks.error)(MIDIMSG_MESSAGE_ABORTED);
+}
+
+static void err_message_unexpected_data(UBYTE whatever)
+{
+    (*midimsg_callbacks.error)(MIDIMSG_UNEXPECTED_DATA);
 }
 
 /* Channel message storage functions */
@@ -217,7 +254,6 @@ static void polyp_value(UBYTE value)
     store_next = polyp_note;
     (*midimsg_callbacks.poly_pressure)(&poly_pressure);    
 }
-
 
 static void controlc_channel(UBYTE channel)
 {
@@ -313,3 +349,73 @@ static void reset(void)
 {
     (*midimsg_callbacks.reset)();
 }
+
+/* System common messages */
+static void sysex(UBYTE byte)
+{
+    /* A sysex starting terminates the previous one. */
+    if (byte == 0xF0)
+    {	    
+	if (system_exclusive.length)
+	    sysex(0xF7);
+
+	sysex_errored = 0;
+	system_exclusive.length = 0;
+	store_next = sysex;
+    }
+
+    if (system_exclusive.length >= sysex_max_size)
+    {
+	if (!sysex_errored) /* Only fire the error once */
+	{
+	    (*midimsg_callbacks.error)(MIDIMSG_SYSEX_TOO_LARGE);
+	    sysex_errored = 1;
+	}
+    }
+    else
+	system_exclusive.data[system_exclusive.length++] = byte;
+
+    if (byte == 0xF7)
+    {
+	if (!sysex_errored)
+	    (*midimsg_callbacks.system_exclusive)(&system_exclusive);
+	system_exclusive.length = 0;
+	store_next = err_message_unexpected_data;
+    }
+}
+
+static void mtc_quarter_frame_type(UBYTE type)
+{
+    mtc_quarter_frame.type = type;
+    store_next = mtc_quarter_frame_value;
+}
+
+static void mtc_quarter_frame_value(UBYTE value)
+{
+    mtc_quarter_frame.value = value;
+    (*midimsg_callbacks.mtc_quarter_frame)(&mtc_quarter_frame);
+}
+
+static void song_position_lsb(UBYTE lsb)
+{
+    song_position = lsb;
+    store_next = song_position_msb;
+}
+
+static void song_position_msb(UBYTE msb)
+{
+    song_position |= (msb << 7);
+    store_next = pitchb_lsb;
+    (*midimsg_callbacks.song_position)(song_position);
+}
+
+static void song_select(UBYTE song)
+{
+    (*midimsg_callbacks.song_select)(song);
+}
+
+static void tune_request(UBYTE whatever)
+{
+    (*midimsg_callbacks.tune_request)();
+}
+

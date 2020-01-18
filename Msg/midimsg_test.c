@@ -4,6 +4,22 @@
 
 #include "midimsg.h"
 
+static void midi_error(int code) {
+    switch (code) {
+    case MIDIMSG_MESSAGE_ABORTED:
+	printf("Message aborted !\n");
+	break;
+    case MIDIMSG_UNEXPECTED_DATA:
+	printf("Unexpected data !\n");
+	break;
+    case MIDIMSG_SYSEX_TOO_LARGE:
+	printf("Sysex too large !\n");
+	break;
+    default:
+	printf("Unknown error message %d\n !");
+    }
+}
+
 static void note_off(MIDIMSG_NOTE_OFF *msg) {
     printf("Note Off     : %2x %2x %2x\n", msg->channel, msg->note, msg->velocity);
 }
@@ -57,6 +73,13 @@ static void reset(void) {
     printf("Reset\n");
 }
 
+static void system_exclusive(MIDIMSG_SYSEX *sysex) {
+    printf("Sysex        : ");
+    for (int i; i<sysex->length; i++)
+	printf("%2x ", sysex->data[i]);
+    printf("\n");
+}
+
 
 int main(int argc, char *argv[]) {
     UBYTE data[] = {
@@ -78,15 +101,20 @@ int main(int argc, char *argv[]) {
 	0xFB, /* Song continue */
 	0xFC, /* Song stop */
 	0xFE, /* Active sensing */
-	0xFF /* Reset */
+	0xFF, /* Reset */
+	0xF0, 0x41, 0x10, 0x42, 0x12, 0x50, 0x50, 0x30, 0x23, 0xF7, /* Sysex */
+	0xF0, 0x41, 0x10, 0x42, 0x12, 0x50, 0x50, 0x30, 0x23, 0x10, 0x10, 0xF7, /* Sysex too long */
+	0xF0, 0x12, 0x30, 0xF0, 0x32, 0x50, 0xF7 /* New sysex auto terminates other one */
     };
 
+    UBYTE sysex_buffer[10];
     (void)argc;
     (void)argv;
 
-    midimsg_init();
+    midimsg_init(sysex_buffer, sizeof(sysex_buffer)/sizeof(UBYTE));
 
     /* Set callbacks */
+    midimsg_callbacks.error = midi_error;
     midimsg_callbacks.note_off = note_off;
     midimsg_callbacks.note_on = note_on;
     midimsg_callbacks.poly_pressure = polyp;
@@ -100,7 +128,9 @@ int main(int argc, char *argv[]) {
     midimsg_callbacks.song_stop = song_stop;
     midimsg_callbacks.active_sensing = active_sensing;
     midimsg_callbacks.reset = reset;
-	
+    midimsg_callbacks.system_exclusive = system_exclusive;
+
+    
 
     /* Send the bytes to midimsg_process and let it fire callbacks */
     for (int i=0; i<sizeof(data)/sizeof(UBYTE); i++)

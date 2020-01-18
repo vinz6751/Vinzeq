@@ -9,6 +9,11 @@
 #define WORD signed short
 #endif
 
+#ifndef UWORD
+#define UWORD unsigned short
+#endif
+
+
 typedef struct {
     UBYTE channel;
     UBYTE note;
@@ -48,8 +53,20 @@ typedef struct {
     WORD value;
 } MIDIMSG_PITCH_BEND;
 
+/* System common messages */
+typedef struct {
+    int length;
+    UBYTE *data;
+} MIDIMSG_SYSEX;
+
+typedef struct {
+    UBYTE type;
+    UBYTE value;
+} MIDIMSG_MTC_QUARTER_FRAME;
+
 #define MIDIMSG_MESSAGE_ABORTED 1
 #define MIDIMSG_UNEXPECTED_DATA 2
+#define MIDIMSG_SYSEX_TOO_LARGE 3
 
 typedef struct {
     void (*error)(int number);
@@ -62,18 +79,25 @@ typedef struct {
     void (*channel_pressure)(MIDIMSG_CHANNEL_PRESSURE*);
     void (*pitch_bend)(MIDIMSG_PITCH_BEND*);
 
-    /* System real-time message */
+    /* System real-time messages */
     void (*clock)(void);
     void (*song_start)(void);
     void (*song_continue)(void);
     void (*song_stop)(void);
     void (*active_sensing)(void);
     void (*reset)(void);
+
+    /* System common messages */
+    void (*system_exclusive)(MIDIMSG_SYSEX *);
+    void (*mtc_quarter_frame)(MIDIMSG_MTC_QUARTER_FRAME*);
+    void (*song_position)(UWORD);
+    void (*song_select)(UBYTE);
+    void (*tune_request)(void);
 } MIDIMSG_CALLBACKS;
 
 extern MIDIMSG_CALLBACKS midimsg_callbacks;
 
-void midimsg_init(void);
+void midimsg_init(UBYTE *sysex_buffer, int sysex_buffer_size);
 void midimsg_exit(void);
 void midimsg_process(UBYTE byte);
 
