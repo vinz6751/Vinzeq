@@ -20,6 +20,7 @@ static void midi_error(int code) {
     }
 }
 
+/* Channel messages */
 static void note_off(MIDIMSG_NOTE_OFF *msg) {
     printf("Note Off     : %2x %2x %2x\n", msg->channel, msg->note, msg->velocity);
 }
@@ -73,6 +74,7 @@ static void reset(void) {
     printf("Reset\n");
 }
 
+/* System common messages */
 static void system_exclusive(MIDIMSG_SYSEX *sysex) {
     printf("Sysex        : ");
     for (int i; i<sysex->length; i++)
@@ -94,6 +96,12 @@ static void song_select(UBYTE song)
 {
     printf("Song selection: %d\n", song);
 }
+
+static void tune_request()
+{
+    printf("Tune request\n");
+}
+
 
 int main(int argc, char *argv[]) {
     UBYTE data[] = {
@@ -122,7 +130,8 @@ int main(int argc, char *argv[]) {
 	0xF1, 0x42, /* Midi Time Code Quarter Frame */
 	0xF2, 0x00, 0x00, /* Song pointer (mini) */
 	0xF2, 0x7f, 0x7f, /* Song pointer (maxi) */
-	0xF3, 0x02 /* Song select */	
+	0xF3, 0x02, /* Song select */
+	0xF6 /* Tune request */
     };
 
     UBYTE sysex_buffer[10];
@@ -150,6 +159,7 @@ int main(int argc, char *argv[]) {
     midimsg_callbacks.mtc_quarter_frame = mtc_quarter_frame;
     midimsg_callbacks.song_position = song_position;
     midimsg_callbacks.song_select = song_select;
+    midimsg_callbacks.tune_request = tune_request;
     
     /* Send the bytes to midimsg_process and let it fire callbacks */
     for (int i=0; i<sizeof(data)/sizeof(UBYTE); i++)
