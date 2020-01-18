@@ -3,12 +3,14 @@
  * This is written for speed.
  */
 
+#include <stdio.h>
+
 #include "midimsg.h"
 
 static int msg_in_progress = 0;
 
 /* These are structures which get filled up with bytes received, and which
- * are then passed tothe user's callback functions */
+ * are then passed to the user's callback functions */
 MIDIMSG_NOTE_ON note_on;
 MIDIMSG_NOTE_OFF note_off;
 MIDIMSG_POLY_PRESSURE poly_pressure;
@@ -57,8 +59,13 @@ static void song_stop(void);
 static void active_sensing(void);
 static void reset(void);
 
+static UBYTE running_status;
+
 static void err_message_aborted(UBYTE);
-static void empty(void) { }
+/* Empty callbacks */
+static void reset_callbacks(void);
+static void empty_realtime(void) { }
+static void empty_channel(void) { }
 
 static void (*store_next)(UBYTE) = err_message_aborted;
 static void (*channel_msg_store[])(UBYTE) =
@@ -74,35 +81,76 @@ static void (*channel_msg_store[])(UBYTE) =
 static void (*realtime_msg_store[])(void) =
 {
     clock,
-    empty,
+    empty_realtime,
     song_start,
     song_continue,
     song_stop,
-    empty,
+    empty_realtime,
     active_sensing,
     reset
 };
 
+static void reset_callbacks(void)
+{
+    midimsg_callbacks.note_off = (void(*)(MIDIMSG_NOTE_OFF*))empty_channel;
+    midimsg_callbacks.note_on = (void(*)(MIDIMSG_NOTE_ON*))empty_channel;
+    midimsg_callbacks.poly_pressure= (void(*)(MIDIMSG_POLY_PRESSURE*))empty_channel;
+    midimsg_callbacks.control_change = (void(*)(MIDIMSG_CONTROL_CHANGE*))empty_channel;
+    midimsg_callbacks.program_change = (void(*)(MIDIMSG_PROGRAM_CHANGE*))empty_channel;
+    midimsg_callbacks.channel_pressure = (void(*)(MIDIMSG_CHANNEL_PRESSURE*))empty_channel;
+    midimsg_callbacks.pitch_bend = (void(*)(MIDIMSG_PITCH_BEND*))empty_channel;
 
+    midimsg_callbacks.clock = empty_realtime;
+    midimsg_callbacks.song_start = empty_realtime;
+    midimsg_callbacks.song_continue = empty_realtime;
+    midimsg_callbacks.song_stop = empty_realtime;
+    midimsg_callbacks.active_sensing = empty_realtime;
+    midimsg_callbacks.reset = empty_realtime;
+}
+
+void midimsg_init(void)
+{
+    reset_callbacks();
+}
+
+void midimsg_exit(void)
+{
+    reset_callbacks();
+}
+
+
+/* This is the one method to be used by users of this module. */
 void midimsg_process(UBYTE byte)
 {
   if (byte >= 0xF8)
   {
-      // Realtime message
+      /* Realtime message */
       register UBYTE index = byte - 0xF8;
       (*realtime_msg_store[index])();
   }
   else if (byte >=0xF0)
   {
-      // System common message
+      /* System common message */
       register UBYTE index = byte - 0xF8;
-
+      running_status = 0;
   }
   else if (byte >= 0x80)
   {
-      // Channel message
+      /* Channel message */
+      running_status = byte;
       register UBYTE index = (byte - 0x80) >> 4;
       (*channel_msg_store[index])(byte);
+  }
+  else
+  {
+      if (store_next)
+      {
+	  (*store_next)(byte);
+      }
+      else
+      {
+	  (*midimsg_callbacks.error)(MIDIMSG_UNEXPECTED_DATA);
+      }
   }
 }
 
@@ -128,7 +176,7 @@ static void noteoff_note(UBYTE note)
 static void noteoff_velocity(UBYTE velocity)
 {
     note_off.velocity = velocity;
-    store_next = err_message_aborted;
+    store_next = noteoff_note;
     (*midimsg_callbacks.note_off)(&note_off);
 }
 
@@ -147,7 +195,7 @@ static void noteon_note(UBYTE note)
 static void noteon_velocity(UBYTE velocity)
 {
     note_on.velocity = velocity;
-    store_next = err_message_aborted;
+    store_next = noteon_note;
     (*midimsg_callbacks.note_on)(&note_on);
 }
 
@@ -160,15 +208,16 @@ static void polyp_channel(UBYTE channel)
 static void polyp_note(UBYTE note)
 {
     poly_pressure.note = note;
-    store_next = noteoff_velocity;
+    store_next = polyp_value;
 }
 
 static void polyp_value(UBYTE value)
 {
     poly_pressure.value = value;
-    store_next = err_message_aborted;
+    store_next = polyp_note;
     (*midimsg_callbacks.poly_pressure)(&poly_pressure);    
 }
+
 
 static void controlc_channel(UBYTE channel)
 {
@@ -185,7 +234,7 @@ static void controlc_control(UBYTE control)
 static void controlc_value(UBYTE value)
 {
     control_change.value = value;
-    store_next = err_message_aborted;
+    store_next = controlc_control;
     (*midimsg_callbacks.control_change)(&control_change);    
 }
 
@@ -198,7 +247,7 @@ static void programc_channel(UBYTE channel)
 static void programc_program(UBYTE program)
 {
     program_change.program = program;
-    store_next = err_message_aborted;
+    store_next = programc_program;
     (*midimsg_callbacks.program_change)(&program_change);
 }
 
@@ -211,7 +260,7 @@ static void channelp_channel(UBYTE channel)
 static void channelp_value(UBYTE value)
 {
     channel_pressure.value = value;
-    store_next = err_message_aborted;
+    store_next = channelp_channel;
     (*midimsg_callbacks.channel_pressure)(&channel_pressure);
 }
 
@@ -229,9 +278,8 @@ static void pitchb_lsb(UBYTE lsb)
 
 static void pitchb_msb(UBYTE msb)
 {
-    pitch_bend.value |= msb << 7;
-    pitch_bend.value -= 8192;
-    store_next = err_message_aborted;
+    pitch_bend.value |= (msb << 7);
+    store_next = pitchb_lsb;
     (*midimsg_callbacks.pitch_bend)(&pitch_bend);
 }
 

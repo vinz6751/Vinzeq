@@ -6,7 +6,7 @@
 #endif
 
 #ifndef WORD
-#define WORD short
+#define WORD signed short
 #endif
 
 typedef struct {
@@ -49,7 +49,7 @@ typedef struct {
 } MIDIMSG_PITCH_BEND;
 
 #define MIDIMSG_MESSAGE_ABORTED 1
-
+#define MIDIMSG_UNEXPECTED_DATA 2
 
 typedef struct {
     void (*error)(int number);
@@ -72,5 +72,9 @@ typedef struct {
 } MIDIMSG_CALLBACKS;
 
 extern MIDIMSG_CALLBACKS midimsg_callbacks;
-    
+
+void midimsg_init(void);
+void midimsg_exit(void);
+void midimsg_process(UBYTE byte);
+
 #endif
