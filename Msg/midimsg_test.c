@@ -80,6 +80,20 @@ static void system_exclusive(MIDIMSG_SYSEX *sysex) {
     printf("\n");
 }
 
+static void mtc_quarter_frame(MIDIMSG_MTC_QUARTER_FRAME *mtc)
+{
+    printf("MTC 1/4 frame: %2x %2x\n", mtc->type, mtc->value);
+}
+
+static void song_position(UWORD position)
+{
+    printf("Song position: %4x\n", position);
+}
+
+static void song_select(UBYTE song)
+{
+    printf("Song selection: %d\n", song);
+}
 
 int main(int argc, char *argv[]) {
     UBYTE data[] = {
@@ -104,7 +118,11 @@ int main(int argc, char *argv[]) {
 	0xFF, /* Reset */
 	0xF0, 0x41, 0x10, 0x42, 0x12, 0x50, 0x50, 0x30, 0x23, 0xF7, /* Sysex */
 	0xF0, 0x41, 0x10, 0x42, 0x12, 0x50, 0x50, 0x30, 0x23, 0x10, 0x10, 0xF7, /* Sysex too long */
-	0xF0, 0x12, 0x30, 0xF0, 0x32, 0x50, 0xF7 /* New sysex auto terminates other one */
+	0xF0, 0x12, 0x30, 0xF0, 0x32, 0x50, 0xF7, /* New sysex auto terminates other one */
+	0xF1, 0x42, /* Midi Time Code Quarter Frame */
+	0xF2, 0x00, 0x00, /* Song pointer (mini) */
+	0xF2, 0x7f, 0x7f, /* Song pointer (maxi) */
+	0xF3, 0x02 /* Song select */	
     };
 
     UBYTE sysex_buffer[10];
@@ -129,9 +147,10 @@ int main(int argc, char *argv[]) {
     midimsg_callbacks.active_sensing = active_sensing;
     midimsg_callbacks.reset = reset;
     midimsg_callbacks.system_exclusive = system_exclusive;
-
+    midimsg_callbacks.mtc_quarter_frame = mtc_quarter_frame;
+    midimsg_callbacks.song_position = song_position;
+    midimsg_callbacks.song_select = song_select;
     
-
     /* Send the bytes to midimsg_process and let it fire callbacks */
     for (int i=0; i<sizeof(data)/sizeof(UBYTE); i++)
     {

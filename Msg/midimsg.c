@@ -16,12 +16,11 @@ MIDIMSG_CONTROL_CHANGE control_change;
 MIDIMSG_PROGRAM_CHANGE program_change;
 MIDIMSG_CHANNEL_PRESSURE channel_pressure;
 MIDIMSG_PITCH_BEND pitch_bend;
-UWORD song_position;
 int sysex_max_size;
 MIDIMSG_SYSEX system_exclusive;
 int sysex_errored;
 MIDIMSG_MTC_QUARTER_FRAME mtc_quarter_frame;
-
+UWORD song_position;
 
 MIDIMSG_CALLBACKS midimsg_callbacks = {
     0L, /* Error */
@@ -65,11 +64,13 @@ static void reset(void);
 
 /* System common storage functions */
 static void sysex(UBYTE);
-static void mtc_quarter_frame_type(UBYTE);
-static void mtc_quarter_frame_value(UBYTE);
+static void mtc_quarter_frame_status(UBYTE);
+static void mtc_quarter_frame_data(UBYTE);
+static void song_position_status(UBYTE);
 static void song_position_lsb(UBYTE);
 static void song_position_msb(UBYTE);
-static void song_select(UBYTE);
+static void song_select_status(UBYTE);
+static void song_select_number(UBYTE);
 static void tune_request(UBYTE);
 
 /* Error callbacks (to be called next time we receive a byte after we've detected something wrong */
@@ -105,9 +106,9 @@ static void (*realtime_msg_store[])(void) =
 static void (*common_msg_store[])(UBYTE) =
 {
     sysex,
-    mtc_quarter_frame_type,
-    song_position_lsb,
-    song_select,
+    mtc_quarter_frame_status,
+    song_position_status,
+    song_select_status,
     empty_byte,
     empty_byte,
     tune_request,
@@ -155,34 +156,18 @@ void midimsg_exit(void)
 /* This is the one method to be used by users of this module. */
 void midimsg_process(UBYTE byte)
 {
-  if (byte >= 0xF8)
-  {
-      /* Realtime message */
-      register UBYTE index = byte - 0xF8;
-      (*realtime_msg_store[index])();
-  }
-  else if (byte >=0xF0)
-  {
-      /* System common message */
-      register UBYTE index = byte - 0xF0;
-      (*common_msg_store[index])(byte);
-  }
-  else if (byte >= 0x80)
-  {
-      /* Channel message */
-      register UBYTE index = (byte - 0x80) >> 4;
-      (*channel_msg_store[index])(byte);
-  }
+  if (byte >= 0xF8) /* Realtime message */
+      (*realtime_msg_store[byte - 0xF8])();
+  else if (byte >=0xF0) /* System common message */
+      (*common_msg_store[byte - 0xF0])(byte);
+  else if (byte >= 0x80) /* Channel message */
+      (*channel_msg_store[(byte - 0x80) >> 4])(byte);
   else
   {
       if (store_next)
-      {
 	  (*store_next)(byte);
-      }
       else
-      {
 	  (*midimsg_callbacks.error)(MIDIMSG_UNEXPECTED_DATA);
-      }
   }
 }
 
@@ -384,16 +369,22 @@ static void sysex(UBYTE byte)
     }
 }
 
-static void mtc_quarter_frame_type(UBYTE type)
+static void mtc_quarter_frame_status(UBYTE msg)
 {
-    mtc_quarter_frame.type = type;
-    store_next = mtc_quarter_frame_value;
+    store_next = mtc_quarter_frame_data;
 }
 
-static void mtc_quarter_frame_value(UBYTE value)
+static void mtc_quarter_frame_data(UBYTE data)
 {
-    mtc_quarter_frame.value = value;
+    mtc_quarter_frame.value = data & 0x0f;
+    mtc_quarter_frame.type = data & 0x70;
     (*midimsg_callbacks.mtc_quarter_frame)(&mtc_quarter_frame);
+    store_next = err_message_unexpected_data;
+}
+
+static void song_position_status(UBYTE spos)
+{
+    store_next = song_position_lsb;
 }
 
 static void song_position_lsb(UBYTE lsb)
@@ -405,11 +396,16 @@ static void song_position_lsb(UBYTE lsb)
 static void song_position_msb(UBYTE msb)
 {
     song_position |= (msb << 7);
-    store_next = pitchb_lsb;
+    store_next = err_message_unexpected_data;
     (*midimsg_callbacks.song_position)(song_position);
 }
 
-static void song_select(UBYTE song)
+static void song_select_status(UBYTE msg)
+{
+    store_next = song_select_number;
+}
+
+static void song_select_number(UBYTE song)
 {
     (*midimsg_callbacks.song_select)(song);
 }
