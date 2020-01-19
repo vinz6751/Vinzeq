@@ -9,18 +9,18 @@
 
 /* These are structures which get filled up with bytes received, and which
  * are then passed to the user's callback functions */
-MIDIMSG_NOTE_ON note_on;
-MIDIMSG_NOTE_OFF note_off;
-MIDIMSG_POLY_PRESSURE poly_pressure;
-MIDIMSG_CONTROL_CHANGE control_change;
-MIDIMSG_PROGRAM_CHANGE program_change;
-MIDIMSG_CHANNEL_PRESSURE channel_pressure;
-MIDIMSG_PITCH_BEND pitch_bend;
-int sysex_max_size;
-MIDIMSG_SYSEX system_exclusive;
-int sysex_errored;
-MIDIMSG_MTC_QUARTER_FRAME mtc_quarter_frame;
-UWORD song_position;
+static MIDIMSG_NOTE_ON note_on;
+static MIDIMSG_NOTE_OFF note_off;
+static MIDIMSG_POLY_PRESSURE poly_pressure;
+static MIDIMSG_CONTROL_CHANGE control_change;
+static MIDIMSG_PROGRAM_CHANGE program_change;
+static MIDIMSG_CHANNEL_PRESSURE channel_pressure;
+static MIDIMSG_PITCH_BEND pitch_bend;
+static int sysex_max_size;
+static MIDIMSG_SYSEX system_exclusive;
+static int sysex_errored;
+static MIDIMSG_MTC_QUARTER_FRAME mtc_quarter_frame;
+static UWORD song_position;
 
 MIDIMSG_CALLBACKS midimsg_callbacks = {
     0L, /* Error */
