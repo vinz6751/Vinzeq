@@ -27,6 +27,12 @@
 ; If there is a problem, the error callback is called with an error code 
 ; described below.
 ;
+; Timestamping of messages because it adds a bit of extra code (not much but
+; if we're after performance, we want this to be optional). It works by
+; specifying ULONG*. When a message starts, we get the value from that long
+; and store it with the message (except for realtime because we don't have
+; to memorise it).
+;
 ; This code is written for Brainstorm Assemble, which is so much better than
 ; PASM (the Pure C's assembler). PASM has problems with the macro.
 
@@ -35,7 +41,8 @@ MESSAGE_ABORTED	EQU	1
 UNEXPECTED_DATA	EQU	2
 SYSEX_TOO_LARGE	EQU	3
 
-DEBUG	EQU	0	; Set this 1 to to have extended debug info
+DEBUG		EQU	1	; Set this 1 to to have extended debug info
+USE_TIMESTAMP	EQU	1	; Enable this is you want to use timestamp
 
 	OUTPUT	midimsg.o
 	OPT 	L1; Pure C object format
@@ -46,7 +53,7 @@ DEBUG	EQU	0	; Set this 1 to to have extended debug info
 	IF	DEBUG
 	OPT	E+,X+,Y+; All debug symbols
 	ELSE
-	OPT	E-,X-,Y-; All debug symbols
+	OPT	E-,X-,Y-
 	ENDIF
 	
 	TEXT
@@ -57,6 +64,24 @@ SEND_ERROR	MACRO
 	jmp	(a1)
 	ENDM
 
+SET_CAPTURE_TS	MACRO
+	; Convenience macro so that functions handling the completion of 
+	; channel messages can indicate that a new message would be using
+	; running status, in which case we have to update the timestamp that
+	; goes with the message when the message starts.
+	IF USE_TIMESTAMP
+	move.b	#$ff,capturets
+	ENDIF
+	ENDM
+
+PASS_DATA MACRO
+	IF USE_TIMESTAMP
+	lea	timestamp,a0
+	ELSE
+	lea	msgdata,a0
+	ENDIF
+	ENDM
+
 empty_void:
 	rts
 
@@ -64,102 +89,109 @@ err_message_unexpected_data:
 	SEND_ERROR	UNEXPECTED_DATA
 
 noteoff_channel:
-	move.b	d0,note_off
+	move.b	d0,msgdata
 	move.l	#noteoff_note,store_next
 	rts
 noteoff_note:
-	move.b	d0,note_off+1
+	move.b	d0,msgdata+1
 	move.l	#noteoff_velocity,store_next
 	rts
 noteoff_velocity:
-	move.b	d0,note_off+2
+	move.b	d0,msgdata+2
 	move.l	#noteoff_note,store_next
-	lea.l	note_off,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l	midimsg_callbacks+4(pc),a1
 	jmp 	(a1)
 
 noteon_channel:
-	move.b	d0,note_on
+	move.b	d0,msgdata
 	move.l	#noteon_note,store_next
 	rts
 noteon_note:
-	move.b	d0,note_on+1
+	move.b	d0,msgdata+1
 	move.l	#noteon_velocity,store_next
 	rts
 noteon_velocity:
-	move.b	d0,note_on+2
+	move.b	d0,msgdata+2
 	move.l	#noteon_note,store_next
-	lea	note_on,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l	midimsg_callbacks+8(pc),a1
 	jmp 	(a1)
 
 polyp_channel:
-	move.b	d0,poly_pressure
+	move.b	d0,msgdata
 	move.l	#polyp_note,store_next
 	rts
 polyp_note:
-	move.b	d0,poly_pressure+1
+	move.b	d0,msgdata+1
 	move.l	#polyp_value,store_next
 	rts
 polyp_value:
-	move.b	d0,poly_pressure+2
+	move.b	d0,msgdata+2
 	move.l	#polyp_note,store_next
-	lea	poly_pressure,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l	midimsg_callbacks+12(pc),a1
 	jmp	(a1)
 
 controlc_channel:
-	move.b	d0,control_change
+	move.b	d0,msgdata
 	move.l	#controlc_control,store_next
 	rts
 controlc_control:
-	move.b	d0,control_change+1
+	move.b	d0,msgdata+1
 	move.l	#controlc_value,store_next
 	rts
 controlc_value:
-	move.b	d0,control_change+2
+	move.b	d0,msgdata+2
 	move.l	#controlc_control,store_next
-	lea	control_change,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l 	midimsg_callbacks+16(pc),a1
 	jmp	(a1)
 
 programc_channel:
-	move.b	d0,program_change
+	move.b	d0,msgdata
 	move.l	#programc_program,store_next
 	rts
 programc_program:
-	move.b	d0,program_change+1
+	move.b	d0,msgdata+1
 	move.l	#programc_program,store_next
-	lea	program_change,a0
+	SET_CAPTURE_TS	
+	PASS_DATA
 	move.l	midimsg_callbacks+20(pc),a1
 	jmp	(a1)
 
 channelp_channel:
-	move.b	d0,channel_pressure
+	move.b	d0,msgdata
 	move.l	#channelp_value,store_next
 	rts
 channelp_value:
-	move.b	d0,channel_pressure+1
+	move.b	d0,msgdata+1
 	move.l	#channelp_value,store_next
-	lea	channel_pressure,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l	midimsg_callbacks+24(pc),a1
 	jmp	(a1)
 
 pitchb_channel:
-	move.b	d0,pitch_bend
+	move.b	d0,msgdata
 	move.l	#pitchb_lsb,store_next
 	rts
 pitchb_lsb:
 	ext.w	d0
-	move.w	d0,pitch_bend+2
+	move.w	d0,msgdata+2
 	move.l	#pitchb_msb,store_next
 	rts
 pitchb_msb:
 	ext.w	d0
 	lsl.w	#7,d0
-	or.w	d0,pitch_bend+2
+	or.w	d0,msgdata+2
 	move.l	#pitchb_lsb,store_next
-	lea	pitch_bend,a0
+	SET_CAPTURE_TS
+	PASS_DATA
 	move.l	midimsg_callbacks+28(pc),a1
 	jmp	(a1)
 
@@ -191,13 +223,13 @@ mtc_quarter_frame_status:
 	move.l	#mtc_quarter_frame_data,store_next
 	rts
 
-mtc_quarter_frame_data: ; TODO
+mtc_quarter_frame_data:
 	move.b	d0,d1
-	and.b	#15,d1
-	move.b	d1,mtc_quarter_frame+1
-	lea	mtc_quarter_frame,a0
-	and.b 	#112,d0
-	move.b 	d0,(a0)
+	and.b	#$0f,d1
+	move.b	d1,msgdata+1
+	asr.b	#4,d0
+	move.b 	d0,msgdata
+	PASS_DATA
 	move.l 	#err_message_unexpected_data,store_next
 	move.l 	midimsg_callbacks+60(pc),a1
 	jmp 	(a1)
@@ -206,14 +238,16 @@ song_position_status:
 	move.l 	#song_position_lsb,store_next
 	rts
 song_position_lsb:
-	move.b 	d0,song_position
+	ext.w	d0
+	move.w 	d0,msgdata
 	move.l 	#song_position_msb,store_next
 	rts
 song_position_msb:
 	ext.w 	d0
 	lsl.w 	#7,d0
-	or.b 	song_position,d0
+	or.w 	d0,msgdata
 	move.l 	#err_message_unexpected_data,store_next
+	PASS_DATA
 	move.l 	midimsg_callbacks+64(pc),a1
 	jmp 	(a1)
 
@@ -221,16 +255,20 @@ song_select_status:
 	move.l 	#song_select_number,store_next
 	rts
 song_select_number:
-	ext.w 	d0
+	move.b	d0,msgdata
+	move.l 	#err_message_unexpected_data,store_next
+	PASS_DATA
 	move.l 	midimsg_callbacks+68(pc),a1
 	jmp 	(a1)
 
 tune_request:
+	IF USE_TIMESTAMP
+	move.l	timestamp,d0
+	ENDIF
 	move.l 	midimsg_callbacks+72(pc),a1
 	jmp 	(a1)
 
-sysex:
-	move.w 	system_exclusive(pc),d2	; length
+sysex:	move.w 	system_exclusive(pc),d2	; length
 	cmp.b 	#$f0,d0
 	beq.s 	.start_sysex
 
@@ -238,7 +276,7 @@ sysex:
 	cmp.w 	sysex_max_size(pc),d2
 	blt.s 	.ok_to_store
 	tst.b 	sysex_errored ;too big, raise error if not already done
-	beq.s 	.sysex_error
+	beq 	.sysex_error
 
 .test_eox:
 	cmp.b 	#$f7,d0
@@ -249,6 +287,7 @@ sysex:
 	bne.s 	.fake_eox
 	clr.b 	sysex_errored
 	clr.w 	system_exclusive ;length
+	move.l	timestamp,sysex_timestamp ;d1 was wrecked
 	move.l 	#sysex,store_next
 	bra.s 	.check_max_size
 
@@ -256,8 +295,10 @@ sysex:
 	; Start of sys-ex auto-termiantes any sys-ex in progress,
 	; so we send ourselves a fake EOX (F7)
 	move.w 	d0,-(sp)
+	move.l	d1,-(sp) ;save timestamp
 	move.w 	#$f7,d0
 	bsr.s 	sysex
+	move.l	(sp)+,d1
 	move.w 	(sp)+,d0
 	clr.b 	sysex_errored
 	clr.w 	system_exclusive; length
@@ -284,7 +325,11 @@ sysex:
 	bra	.test_eox
 
 .fire_sysex:
+	IF USE_TIMESTAMP
+	lea	sysex_timestamp(pc),a0
+	ELSE
 	lea	system_exclusive(pc),a0
+	ENDIF
 	move.l	midimsg_callbacks+56(pc),a1
 	jsr	(a1)
 	clr.w	system_exclusive ;length
@@ -299,6 +344,8 @@ midimsg_init:
 	move.l	a0,system_exclusive+2 ; buffer
 	clr.b	sysex_errored
 	clr.w	system_exclusive ; length
+	clr.b	capturets
+	move.l	#dumyts,tsprovider
 	move.l	#empty_void,d0
 	move.l	d0,midimsg_callbacks+8
 	move.l	d0,midimsg_callbacks+4
@@ -320,12 +367,22 @@ midimsg_init:
 	move.l	err_message_unexpected_data(pc),store_next
 	rts
 
+	XDEF	midimsg_set_timestamp
+midimsg_set_timestamp:
+	; a0 is a pointer to a long which contains the current timestamp
+	move.l	a0,tsprovider
+	rts
+
 	XDEF	midimsg_exit
 midimsg_exit:
 	rts
 
 	XDEF	midimsg_process
 midimsg_process:
+	IF	USE_TIMESTAMP
+	movea.l	tsprovider,a1
+	move.l	(a1),d1 ; timestamp
+	ENDIF
 	; Test if new message
 	cmp.b	#$f8,d0
 	bhs.s	.realtime
@@ -334,7 +391,12 @@ midimsg_process:
 	tst.b	d0	;  $80 ?
 	blt.s	.channel
 	; Not a new message, continue building current one
-	movea.l	store_next,a1
+	IF USE_TIMESTAMP
+	tst.b	capturets
+	beq.s	.notrs
+	move.l	d1,timestamp
+	ENDIF
+.notrs	movea.l	store_next,a1
 	cmpa.w	#0,a1
 	beq.s	.unexpected_data
 	and.w	#$ff,d0
@@ -349,9 +411,16 @@ midimsg_process:
 	add.w	d0,d0
 	lea.l	realtime_msg_store,a1
 	movea.l	(a1,d0.w),a1
+	IF USE_TIMESTAMP
+	move.l	d1,d0	; pass timestamp to callback
+	ENDIF
 	jmp	(a1)
 
 .system: ; d0: start of system common message
+	IF USE_TIMESTAMP
+	move.l	d1,timestamp
+	clr.b	capturets
+	ENDIF
 	and.w	#$ff,d0
 	move.w	d0,d1
 	subi.b	#$F0,d1
@@ -362,6 +431,10 @@ midimsg_process:
 	jmp	(a1)
 
 .channel: ; d0: start of channel message
+	IF USE_TIMESTAMP
+	move.l	d1,timestamp
+	clr.b	capturets
+	ENDIF
 	and.w	#$ff,d0
 	move.w	d0,d1
 	subi.b	#$80,d1
@@ -376,6 +449,7 @@ midimsg_process:
 midimsg_callbacks:	ds.l 19*4;we have 19 callbacks
 sysex_max_size:		ds.w 1
 sysex_errored:		ds.w 1 ;.w for alignment
+sysex_timestamp		ds.l 1
 system_exclusive:	ds.w 1 ;length
 			ds.l 1 ;buffer
 
@@ -408,15 +482,12 @@ channel_msg_store:
 	dc.l	programc_channel
 	dc.l	channelp_channel
 	dc.l	pitchb_channel
-
+dumyts:	dc.l	0 ;default timestamp value, just so we have something
+	
 	SECTION BSS
 store_next:	ds.l 	1 ;function to call to store the next received byte
-pitch_bend:		ds.b	3 ;messages being received. Careful with
-song_position:		ds.b	1 ;alignment of word values (pitch bend)
-mtc_quarter_frame:	ds.b	2 
-channel_pressure: 	ds.b	3
-program_change:		ds.b	3
-control_change:		ds.b	3
-poly_pressure:		ds.b	3
-note_on:		ds.b	3
-note_off:		ds.b	3
+tsprovider:	ds.l	1 ;pointer to current timestamp long value
+timestamp:	ds.l	1 ;timestamp of the message (except realtime)
+msgdata:	ds.b	3 ;data from received message
+capturets:	ds.b	1 ;flag indicating that a new message starting by
+			  ;running status should have its timestamp set
