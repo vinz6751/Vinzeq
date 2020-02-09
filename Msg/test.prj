@@ -9,6 +9,6 @@ test.tos
 
 pcstart.o       ; Startup code
 test.c			; Main module
-midimsgo.o		; The code under test
+midimsg.o		; The code under test
 pcstdlib.lib    ; Standard library
 pctoslib.lib    ; TOS library
