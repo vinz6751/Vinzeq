@@ -1,0 +1,14 @@
+; Test project for the MIDIMSG module
+
+test.tos
+
+.C [ -Y ]
+.L [ -Y ]
+
+=                  
+
+pcstart.o       ; Startup code
+test.c			; Main module
+midimsgo.o		; The code under test
+pcstdlib.lib    ; Standard library
+pctoslib.lib    ; TOS library

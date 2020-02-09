@@ -1,0 +1,28 @@
+MIDIMSG is a tiny package that recognises events from a MIDI stream
+of bytes, and calls user-defined callback functions appropriately.
+This is not very useful by itself but will be useful if you need to
+handle MIDI input as part of bigger software.
+
+The code itself is nothing Atari specific. It's optimised for the
+68000 processor. Successors (68020 etc.) may use other optimisations
+but they are probably not in a bad need of saving a few cycles compared to
+a 68000-based computer.
+
+The code tries to give higher priority to realtime events by detecting them
+first because they may be related to synchronisation (clock event, song
+position, MTC etc.).
+
+Descriptions of the contents:
+midimsg.s		m68k assembly source code for Brainstorm Assemble
+midimsg.h		Include file for the package.
+test.prj		Pure C project file for the test program
+test.c			Small test program. It will run some tests through the
+				routine then handle any MIDI input from the Atari ST.
+midimsg.c		This is how the routine's algorithm was prototyped in C, you
+				can look at this to understand the algorithm.
+midimsg_test.c	Small test program for midimsg.c. You can compile with 
+				gcc midimsg_test.c midimsg.c -o midimsg_test
+
+Have fun !
+
+Vincent Barrilliot <vincent.barrilliot, laposte.net> 09-Feb-2020
