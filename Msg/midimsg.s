@@ -37,7 +37,7 @@ SYSEX_TOO_LARGE	EQU	3
 
 DEBUG	EQU	0	; Set this 1 to to have extended debug info
 
-	OUTPUT	midimsgo.o
+	OUTPUT	midimsg.o
 	OPT 	L1; Pure C object format
 	OPT	O+ OW+; All optimisations, all warnings
 	MC68000	; This code is 68000 friendly
@@ -140,10 +140,10 @@ channelp_channel:
 	rts
 channelp_value:
 	move.b	d0,channel_pressure+1
-	move.l	channelp_channel,store_next
+	move.l	#channelp_value,store_next
 	lea	channel_pressure,a0
 	move.l	midimsg_callbacks+24(pc),a1
-	jsr	(a1)
+	jmp	(a1)
 
 pitchb_channel:
 	move.b	d0,pitch_bend
@@ -296,7 +296,7 @@ sysex:
 	XDEF	midimsg_init
 midimsg_init:
 	move.w	d0,sysex_max_size
-	move.l	a0,system_exclusive+2 ; buffe
+	move.l	a0,system_exclusive+2 ; buffer
 	clr.b	sysex_errored
 	clr.w	system_exclusive ; length
 	move.l	#empty_void,d0
@@ -410,8 +410,8 @@ channel_msg_store:
 	dc.l	pitchb_channel
 
 	SECTION BSS
-store_next:	ds.l 	1  ;function to call to store the next received byte
-pitch_bend:		ds.b	1 ;messages being received. Careful with
+store_next:	ds.l 	1 ;function to call to store the next received byte
+pitch_bend:		ds.b	3 ;messages being received. Careful with
 song_position:		ds.b	1 ;alignment of word values (pitch bend)
 mtc_quarter_frame:	ds.b	2 
 channel_pressure: 	ds.b	3
