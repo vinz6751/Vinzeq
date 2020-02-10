@@ -27,11 +27,8 @@
 ; If there is a problem, the error callback is called with an error code 
 ; described below.
 ;
-; Timestamping of messages because it adds a bit of extra code (not much but
-; if we're after performance, we want this to be optional). It works by
-; specifying ULONG*. When a message starts, we get the value from that long
-; and store it with the message (except for realtime because we don't have
-; to memorise it).
+; Timestamping of messages is optional because it adds a bit of extra code
+; (not much but if we're after performance, we want this to be optional).
 ;
 ; This code is written for Brainstorm Assemble, which is so much better than
 ; PASM (the Pure C's assembler). PASM has problems with the macro.
@@ -41,7 +38,7 @@ MESSAGE_ABORTED	EQU	1
 UNEXPECTED_DATA	EQU	2
 SYSEX_TOO_LARGE	EQU	3
 
-DEBUG		EQU	1	; Set this 1 to to have extended debug info
+DEBUG		EQU	0	; Set this 1 to to have extended debug info
 USE_TIMESTAMP	EQU	1	; Enable this is you want to use timestamp
 
 	OUTPUT	midimsg.o
@@ -345,44 +342,21 @@ midimsg_init:
 	clr.b	sysex_errored
 	clr.w	system_exclusive ; length
 	clr.b	capturets
-	move.l	#dumyts,tsprovider
-	move.l	#empty_void,d0
-	move.l	d0,midimsg_callbacks+8
-	move.l	d0,midimsg_callbacks+4
-	move.l	d0,midimsg_callbacks+12
-	move.l	d0,midimsg_callbacks+16
-	move.l	d0,midimsg_callbacks+20
-	move.l	d0,midimsg_callbacks+24
-	move.l	d0,midimsg_callbacks+28
-	move.l	d0,midimsg_callbacks+32
-	move.l	d0,midimsg_callbacks+36
-	move.l	d0,midimsg_callbacks+40
-	move.l	d0,midimsg_callbacks+44
-	move.l	d0,midimsg_callbacks+48
-	move.l	d0,midimsg_callbacks+52
-	move.l	d0,midimsg_callbacks+56
-	move.l	d0,midimsg_callbacks+60
-	move.l	d0,midimsg_callbacks+64
-	move.l	d0,midimsg_callbacks+68
 	move.l	err_message_unexpected_data(pc),store_next
+	move.l	#empty_void,d0 ;initialise callbacks
+	moveq	#17,d1
+	lea.l	midimsg_callbacks,a1	
+.loop:	move.l	d0,(a1)+
+	dbra	d1,.loop
 	rts
 
-	XDEF	midimsg_set_timestamp
-midimsg_set_timestamp:
-	; a0 is a pointer to a long which contains the current timestamp
-	move.l	a0,tsprovider
-	rts
 
 	XDEF	midimsg_exit
 midimsg_exit:
 	rts
 
-	XDEF	midimsg_process
+	XDEF	midimsg_process;(d0.b byte, d1.l timestamp)
 midimsg_process:
-	IF	USE_TIMESTAMP
-	movea.l	tsprovider,a1
-	move.l	(a1),d1 ; timestamp
-	ENDIF
 	; Test if new message
 	cmp.b	#$f8,d0
 	bhs.s	.realtime
@@ -402,7 +376,7 @@ midimsg_process:
 	and.w	#$ff,d0
 	jmp	(a1)
 .unexpected_data:
-	SEND_ERROR	UNEXPECTED_DATA
+	SEND_ERROR UNEXPECTED_DATA
 
 .realtime:
 	and.w	#$ff,d0
@@ -416,7 +390,7 @@ midimsg_process:
 	ENDIF
 	jmp	(a1)
 
-.system: ; d0: start of system common message
+.system: ; Start of system common message
 	IF USE_TIMESTAMP
 	move.l	d1,timestamp
 	clr.b	capturets
@@ -430,7 +404,7 @@ midimsg_process:
 	movea.l	(a1,d1.w),a1
 	jmp	(a1)
 
-.channel: ; d0: start of channel message
+.channel: ; Start of channel message, 
 	IF USE_TIMESTAMP
 	move.l	d1,timestamp
 	clr.b	capturets
@@ -482,12 +456,9 @@ channel_msg_store:
 	dc.l	programc_channel
 	dc.l	channelp_channel
 	dc.l	pitchb_channel
-dumyts:	dc.l	0 ;default timestamp value, just so we have something
 	
 	SECTION BSS
 store_next:	ds.l 	1 ;function to call to store the next received byte
-tsprovider:	ds.l	1 ;pointer to current timestamp long value
 timestamp:	ds.l	1 ;timestamp of the message (except realtime)
-msgdata:	ds.b	3 ;data from received message
-capturets:	ds.b	1 ;flag indicating that a new message starting by
-			  ;running status should have its timestamp set
+msgdata:	ds.b	4 ;data from received message (beware of alignement)
+capturets:	ds.b	1 ;flag indicating that a new message starting by running status should have its timestamp set
