@@ -7,8 +7,8 @@
 
 static void midi_error(short code) {
 	switch (code) {
-    	case MIDIMSG_MESSAGE_ABORTED:
-    	printf("Message aborted !\n");
+		case MIDIMSG_MESSAGE_ABORTED:
+	printf("Message aborted !\n");
 		break;
 	case MIDIMSG_UNEXPECTED_DATA:
 		printf("Unexpected data !\n");
@@ -143,40 +143,40 @@ int main(int argc, char *argv[]) {
 	short i;
 	TIMESTAMP ts;
 	(void)argc;
-    (void)argv;
+	(void)argv;
 
 	Cconws("MIDIMSG tests.\r\n");
 	Cconws("TIME Message\r\n");
 
-    midimsg_init(sysex_buffer, sizeof(sysex_buffer)/sizeof(UBYTE));
-	
-    /* Set callbacks */
-    midimsg_callbacks.error = midi_error;
-    midimsg_callbacks.note_off = note_off;
-    midimsg_callbacks.note_on = note_on;
-    midimsg_callbacks.poly_pressure = polyp;
-    midimsg_callbacks.clock = clock;
-    midimsg_callbacks.control_change = controlc;
-    midimsg_callbacks.program_change = programc;
-    midimsg_callbacks.channel_pressure = aftertouch;
-    midimsg_callbacks.pitch_bend = pitchbend;
-    midimsg_callbacks.song_start = song_start;
-    midimsg_callbacks.song_continue = song_continue;
-    midimsg_callbacks.song_stop = song_stop;
-    midimsg_callbacks.active_sensing = active_sensing;
-    midimsg_callbacks.reset = reset;
-    midimsg_callbacks.system_exclusive = system_exclusive;
-    midimsg_callbacks.mtc_quarter_frame = mtc_quarter_frame;
-    midimsg_callbacks.song_position = song_position;
-    midimsg_callbacks.song_select = song_select;
-    midimsg_callbacks.tune_request = tune_request;
-    
-    /* Send the bytes to midimsg_process and let it fire callbacks */
-    for (i=0; i<sizeof(data)/sizeof(UBYTE); i++)
-    {
-    	ts = i+1;
-    	midimsg_process(data[i], ts);
-    }
+	midimsg_init(sysex_buffer, sizeof(sysex_buffer)/sizeof(UBYTE));
+
+	/* Set callbacks */
+	midimsg_callbacks.error = midi_error;
+	midimsg_callbacks.note_off = note_off;
+	midimsg_callbacks.note_on = note_on;
+	midimsg_callbacks.poly_pressure = polyp;
+	midimsg_callbacks.clock = clock;
+	midimsg_callbacks.control_change = controlc;
+	midimsg_callbacks.program_change = programc;
+	midimsg_callbacks.channel_pressure = aftertouch;
+	midimsg_callbacks.pitch_bend = pitchbend;
+	midimsg_callbacks.song_start = song_start;
+	midimsg_callbacks.song_continue = song_continue;
+	midimsg_callbacks.song_stop = song_stop;
+	midimsg_callbacks.active_sensing = active_sensing;
+	midimsg_callbacks.reset = reset;
+	midimsg_callbacks.system_exclusive = system_exclusive;
+	midimsg_callbacks.mtc_quarter_frame = mtc_quarter_frame;
+	midimsg_callbacks.song_position = song_position;
+	midimsg_callbacks.song_select = song_select;
+	midimsg_callbacks.tune_request = tune_request;
+
+	/* Send the bytes to midimsg_process and let it fire callbacks */
+	for (i=0; i<sizeof(data)/sizeof(UBYTE); i++)
+	{
+		ts = i+1;
+		midimsg_process(data[i], ts);
+	}
 
 	/* Flush MIDI IN then keyboard */
 	while (Bconstat(3))
@@ -192,11 +192,11 @@ int main(int argc, char *argv[]) {
 			midimsg_process(b, ++ts);
 		}
 	}
-		
 
-    midimsg_exit();
+	midimsg_exit();
     
 	Cconws("Press a key.");
-    Cnecin();
-    return 0;
+	Cnecin();
+	
+	return 0;
 }
